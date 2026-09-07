@@ -9,87 +9,10 @@ on:
       - main
 
 jobs:
-  # ── Validate HTML ──────────────────────────────
-  validate:
-    name: Validate HTML
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install html-validate
-        run: npm install -g html-validate
-
-      - name: Run HTML validation
-        run: html-validate index.html || true   # warn only, don't block
-
-  # ── Build: generate PWA icons ─────────────────
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install sharp (icon generator)
-        run: npm install sharp
-
-      - name: Generate PWA icons from SVG
-        run: node -e "
-          const sharp = require('sharp');
-          const fs    = require('fs');
-          fs.mkdirSync('icons', { recursive: true });
-
-          // SVG source — purple rounded square with checklist
-          const svg = \`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
-            <defs>
-              <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-                <stop offset='0' stop-color='#8b83ff'/>
-                <stop offset='1' stop-color='#6c63ff'/>
-              </linearGradient>
-            </defs>
-            <rect width='512' height='512' rx='92' fill='url(#g)'/>
-            <!-- row 1 checkbox + check -->
-            <rect x='92' y='128' width='56' height='56' rx='8' fill='none' stroke='white' stroke-width='14'/>
-            <polyline points='101,156 116,172 140,142' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/>
-            <line x1='170' y1='156' x2='380' y2='156' stroke='white' stroke-width='14' stroke-linecap='round'/>
-            <!-- row 2 checkbox + check -->
-            <rect x='92' y='228' width='56' height='56' rx='8' fill='none' stroke='white' stroke-width='14'/>
-            <polyline points='101,256 116,272 140,242' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/>
-            <line x1='170' y1='256' x2='380' y2='256' stroke='white' stroke-width='14' stroke-linecap='round'/>
-            <!-- row 3 checkbox empty -->
-            <rect x='92' y='328' width='56' height='56' rx='8' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='14'/>
-            <line x1='170' y1='356' x2='320' y2='356' stroke='rgba(255,255,255,0.5)' stroke-width='14' stroke-linecap='round'/>
-          </svg>\`;
-
-          const buf = Buffer.from(svg);
-          Promise.all([
-            sharp(buf).resize(192,192).png().toFile('icons/icon-192.png'),
-            sharp(buf).resize(512,512).png().toFile('icons/icon-512.png'),
-          ]).then(() => console.log('Icons generated.'));
-        "
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: |
-            index.html
-            manifest.json
-            service-worker.js
-            icons/
-
   # ── Deploy to GitHub Pages ─────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     permissions:
@@ -104,43 +27,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install sharp
-        run: npm install sharp
-
-      - name: Generate PWA icons
-        run: node -e "
-          const sharp = require('sharp');
-          const fs    = require('fs');
-          fs.mkdirSync('icons', { recursive: true });
-          const svg = \`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
-            <defs>
-              <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-                <stop offset='0' stop-color='#8b83ff'/>
-                <stop offset='1' stop-color='#6c63ff'/>
-              </linearGradient>
-            </defs>
-            <rect width='512' height='512' rx='92' fill='url(#g)'/>
-            <rect x='92' y='128' width='56' height='56' rx='8' fill='none' stroke='white' stroke-width='14'/>
-            <polyline points='101,156 116,172 140,142' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/>
-            <line x1='170' y1='156' x2='380' y2='156' stroke='white' stroke-width='14' stroke-linecap='round'/>
-            <rect x='92' y='228' width='56' height='56' rx='8' fill='none' stroke='white' stroke-width='14'/>
-            <polyline points='101,256 116,272 140,242' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/>
-            <line x1='170' y1='256' x2='380' y2='256' stroke='white' stroke-width='14' stroke-linecap='round'/>
-            <rect x='92' y='328' width='56' height='56' rx='8' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='14'/>
-            <line x1='170' y1='356' x2='320' y2='356' stroke='rgba(255,255,255,0.5)' stroke-width='14' stroke-linecap='round'/>
-          </svg>\`;
-          const buf = Buffer.from(svg);
-          Promise.all([
-            sharp(buf).resize(192,192).png().toFile('icons/icon-192.png'),
-            sharp(buf).resize(512,512).png().toFile('icons/icon-512.png'),
-          ]).then(() => console.log('Icons generated.'));
-        "
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
