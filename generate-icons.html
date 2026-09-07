@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Icon Generator — run once then close</title>
+  <style>
+    body { font-family: system-ui; padding: 32px; background: #f0f2f8; }
+    h2 { margin-bottom: 16px; }
+    canvas { display: none; }
+    .status { margin-top: 16px; font-size: .95rem; color: #166534; background: #dcfce7; padding: 12px 16px; border-radius: 8px; }
+    a { display: inline-block; margin: 8px 8px 0 0; padding: 10px 20px; background: #6c63ff; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h2>📲 PWA Icon Generator</h2>
+  <p>Click the buttons below to download the two icon files.<br>
+     Save them into the <code>icons/</code> folder inside your project.</p>
+
+  <div id="links"></div>
+
+  <canvas id="c192" width="192" height="192"></canvas>
+  <canvas id="c512" width="512" height="512"></canvas>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      const r = size * 0.18; // corner radius
+
+      // Background — brand purple
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.lineTo(size - r, 0);
+      ctx.quadraticCurveTo(size, 0, size, r);
+      ctx.lineTo(size, size - r);
+      ctx.quadraticCurveTo(size, size, size - r, size);
+      ctx.lineTo(r, size);
+      ctx.quadraticCurveTo(0, size, 0, size - r);
+      ctx.lineTo(0, r);
+      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, size, size);
+      grad.addColorStop(0, '#8b83ff');
+      grad.addColorStop(1, '#6c63ff');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Checklist lines
+      const pad   = size * 0.18;
+      const lineH = size * 0.13;
+      const gap   = size * 0.055;
+      const boxS  = size * 0.11;
+      const startY = size * 0.25;
+      const rows = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillStyle   = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth   = size * 0.028;
+      ctx.lineCap     = 'round';
+
+      for (let i = 0; i < rows; i++) {
+        const y = startY + i * (lineH + gap);
+        const bx = pad;
+        const by = y;
+
+        // Checkbox square
+        ctx.strokeRect(bx, by, boxS, boxS);
+
+        if (i < 2) {
+          // Checkmark inside first two boxes
+          ctx.beginPath();
+          ctx.moveTo(bx + boxS * 0.18, by + boxS * 0.5);
+          ctx.lineTo(bx + boxS * 0.42, by + boxS * 0.75);
+          ctx.lineTo(bx + boxS * 0.82, by + boxS * 0.2);
+          ctx.stroke();
+        }
+
+        // Text line next to box
+        ctx.beginPath();
+        const lx = bx + boxS + size * 0.08;
+        const ly = by + boxS * 0.5;
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(pad + size * 0.62 - (i === 2 ? size * 0.15 : 0), ly);
+        ctx.stroke();
+      }
+    }
+
+    function makeDownloadLink(canvas, filename, label) {
+      drawIcon(canvas, canvas.width);
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.textContent = `⬇ Download ${label}`;
+      document.getElementById('links').appendChild(a);
+    }
+
+    makeDownloadLink(document.getElementById('c192'), 'icon-192.png', 'icon-192.png  (192×192)');
+    makeDownloadLink(document.getElementById('c512'), 'icon-512.png', 'icon-512.png  (512×512)');
+
+    const status = document.createElement('div');
+    status.className = 'status';
+    status.innerHTML = '✅ Click each button above to download the icons, then place both files in the <strong>icons/</strong> folder inside your project. You can delete this file afterwards.';
+    document.body.appendChild(status);
+  </script>
+</body>
+</html>

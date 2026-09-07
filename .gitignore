@@ -3,6 +3,10 @@
 Thumbs.db
 desktop.ini
 
+# Keep icons folder tracked even when empty
+!icons/
+!icons/.gitkeep
+
 # Editor directories
 .vscode/
 .idea/

@@ -4,6 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>My Daily To-Do</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="To-Do" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- Theme / browser chrome color -->
+  <meta name="theme-color" content="#6c63ff" id="theme-color-meta" />
+  <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+
+  <!-- SEO / social -->
+  <meta name="description" content="A fast, offline-capable daily task manager. Manage tasks, set reminders, and stay productive — works without internet." />
+  <meta property="og:title" content="My Daily To-Do" />
+  <meta property="og:description" content="Fast, offline-capable daily task manager." />
+  <meta property="og:type" content="website" />
   <style>
     /* ── Design tokens ── */
     :root {
@@ -1175,6 +1194,8 @@ document.getElementById('clear-done-btn').addEventListener('click', () => {
     const tasks = getListTasks(activeListId);
     const removed = tasks.filter(t => t.done).length;
     if (removed === 0) { showToast('No completed tasks to clear'); return; }
+
+
     setListTasks(activeListId, tasks.filter(t => !t.done));
     save(); renderSidebar(); renderMain();
     showToast(`🧹 Removed ${removed} completed task${removed!==1?'s':''}`);
@@ -1324,6 +1345,114 @@ function applyTheme() {
 ════════════════════════════════════════ */
 renderSidebar();
 renderMain();
+
+/* ════════════════════════════════════════
+   SERVICE WORKER REGISTRATION
+════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => {
+        console.log('[SW] Registered, scope:', reg.scope);
+
+        // Detect a new SW waiting — prompt user to update
+        reg.addEventListener('updatefound', () => {
+          const newSW = reg.installing;
+          newSW.addEventListener('statechange', () => {
+            if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner();
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[SW] Registration failed:', err));
+  });
+}
+
+function showUpdateBanner() {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.style.display = 'flex';
+}
+
+document.getElementById('update-reload-btn')?.addEventListener('click', () => {
+  navigator.serviceWorker.getRegistration().then(reg => {
+    if (reg && reg.waiting) {
+      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+  });
+  window.location.reload();
+});
+
+document.getElementById('update-dismiss-btn')?.addEventListener('click', () => {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.style.display = 'none';
+});
+
+/* ════════════════════════════════════════
+   PWA INSTALL PROMPT
+════════════════════════════════════════ */
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.style.display = 'flex';
+});
+
+document.getElementById('install-btn')?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') {
+    showToast('📲 App installed! Find it on your home screen.');
+  }
+  deferredInstallPrompt = null;
+  document.getElementById('install-btn').style.display = 'none';
+});
+
+window.addEventListener('appinstalled', () => {
+  showToast('📲 App installed successfully!');
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.style.display = 'none';
+});
 </script>
+
+<!-- ── PWA Install button (hidden until browser fires beforeinstallprompt) ── -->
+<button id="install-btn" aria-label="Install app" style="
+  display:none; position:fixed; bottom:28px; right:24px;
+  background:#6c63ff; color:#fff;
+  border:none; border-radius:14px;
+  padding:12px 20px; font-size:.9rem; font-weight:600;
+  box-shadow:0 4px 20px rgba(108,99,255,.4);
+  cursor:pointer; align-items:center; gap:8px;
+  z-index:300; transition:background .18s, transform .18s;
+  font-family:system-ui,-apple-system,sans-serif;">
+  📲 Install App
+</button>
+
+<!-- ── Update available banner ── -->
+<div id="update-banner" role="alert" style="
+  display:none; position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  background:#1a1d2e; color:#fff;
+  border-radius:12px; padding:12px 20px;
+  font-size:.88rem; gap:12px; align-items:center;
+  box-shadow:0 4px 20px rgba(0,0,0,.35);
+  z-index:300; white-space:nowrap;
+  font-family:system-ui,-apple-system,sans-serif;">
+  🔄 A new version is available.
+  <button id="update-reload-btn" style="
+    background:#6c63ff; color:#fff; border:none;
+    border-radius:8px; padding:6px 14px;
+    font-size:.82rem; font-weight:600; cursor:pointer;">
+    Update now
+  </button>
+  <button id="update-dismiss-btn" style="
+    background:transparent; color:#9095b0; border:none;
+    font-size:.82rem; cursor:pointer; padding:4px;">
+    Later
+  </button>
+</div>
+
 </body>
 </html>
