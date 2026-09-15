@@ -309,6 +309,12 @@
     .task-act-btn:hover.edit-btn { background:#ede9fe; color:#5b21b6; border-color:#c4b5fd; }
     .task-act-btn:hover.del-btn  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
     .task-act-btn:hover.sub-btn  { background:#dbeafe; color:#1e40af; border-color:#93c5fd; }
+    .task-act-btn.pin-btn.pinned { color:#f59e0b; }
+    .task-act-btn:hover.pin-btn  { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
+    [data-theme="dark"] .task-act-btn:hover.pin-btn { background:#451a03; color:#fcd34d; border-color:#92400e; }
+    .task-item.pinned { border-left-color:#f59e0b; background:linear-gradient(90deg, rgba(245,158,11,.06), transparent 40%); }
+    .badge-pin { background:#fef3c7; color:#92400e; }
+    [data-theme="dark"] .badge-pin { background:#451a03; color:#fcd34d; }
     [data-theme="dark"] .task-act-btn:hover.edit-btn { background:#2e1065; color:#c4b5fd; border-color:#5b21b6; }
     [data-theme="dark"] .task-act-btn:hover.del-btn  { background:#450a0a; color:#fca5a5; border-color:#991b1b; }
     [data-theme="dark"] .task-act-btn:hover.sub-btn  { background:#1e3a5f; color:#93c5fd; border-color:#1e40af; }
@@ -563,6 +569,51 @@
   </main>
 </div>
 
+<!-- Edit-task modal -->
+<div id="edit-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+  <div class="modal">
+    <h3 id="edit-modal-title">Edit Task</h3>
+    <div class="modal-row">
+      <label for="edit-text">Task</label>
+      <input type="text" id="edit-text" class="modal-input" placeholder="Task description" />
+    </div>
+    <div class="modal-row">
+      <label for="edit-priority">Priority</label>
+      <select id="edit-priority" class="modal-input">
+        <option value="high">🔴 High</option>
+        <option value="medium">⚡ Medium</option>
+        <option value="low">🟢 Low</option>
+      </select>
+    </div>
+    <div class="modal-row">
+      <label for="edit-category">Category</label>
+      <input type="text" id="edit-category" class="modal-input" placeholder="e.g. Errands, Health…" list="edit-category-list" autocomplete="off" />
+      <datalist id="edit-category-list"></datalist>
+    </div>
+    <div class="modal-row">
+      <label for="edit-due">Due date</label>
+      <input type="date" id="edit-due" class="modal-input" />
+    </div>
+    <div class="modal-row">
+      <label for="edit-reminder">Reminder</label>
+      <input type="datetime-local" id="edit-reminder" class="modal-input" />
+    </div>
+    <div class="modal-row">
+      <label for="edit-recur">Repeat</label>
+      <select id="edit-recur" class="modal-input">
+        <option value="">No repeat</option>
+        <option value="daily">🔁 Daily</option>
+        <option value="weekly">📅 Weekly</option>
+        <option value="monthly">🗓 Monthly</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" id="edit-modal-cancel">Cancel</button>
+      <button class="modal-confirm" id="edit-modal-confirm">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- New-list modal -->
 <div id="list-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="list-modal-title">
   <div class="modal">
@@ -728,26 +779,47 @@ function handleTaskComplete(listId, index) {
   const task = tasks[index];
   if (!task) return;
 
-  if (task.recur && !task.done) {
-    // Mark done and create next recurrence
+  // Completing a recurring task — only spawn the next occurrence once.
+  // `spawnedNext` guards against re-spawning if the task is re-opened and re-completed.
+  if (task.recur && !task.done && !task.spawnedNext) {
     task.done = true;
     task.completedAt = new Date().toISOString();
+
     const nextDue = nextRecurDate(task.dueDate || todayStr(), task.recur);
-    const newTask = {
-      ...task,
-      id: uid(),
-      done: false,
-      completedAt: null,
-      reminded: false,
-      dueDate: nextDue,
-      createdAt: new Date().toISOString()
-    };
-    tasks.splice(index + 1, 0, newTask);
-    showToast(`🔁 Next recurrence scheduled for ${formatDate(nextDue)}`);
+
+    // Duplicate guard: don't create if an identical next occurrence already exists.
+    const alreadyExists = tasks.some(t =>
+      !t.done &&
+      t.recur === task.recur &&
+      t.text === task.text &&
+      t.dueDate === nextDue
+    );
+
+    if (alreadyExists) {
+      showToast('✅ Task completed (next occurrence already exists)');
+    } else {
+      const newTask = {
+        ...task,
+        id: uid(),
+        done: false,
+        completedAt: null,
+        reminded: false,
+        spawnedNext: false,
+        dueDate: nextDue,
+        createdAt: new Date().toISOString()
+      };
+      tasks.splice(index + 1, 0, newTask);
+      showToast(`🔁 Next recurrence scheduled for ${formatDate(nextDue)}`);
+    }
+
+    // Mark this task so re-completing it later won't spawn another occurrence.
+    task.spawnedNext = true;
   } else {
+    // Normal toggle (non-recurring, or a recurring task that already spawned its next)
     task.done = !task.done;
     task.completedAt = task.done ? new Date().toISOString() : null;
   }
+
   setListTasks(listId, tasks);
   save(); renderMain();
 }
@@ -758,10 +830,32 @@ function handleTaskComplete(listId, index) {
 let toastTimer = null;
 function showToast(msg) {
   const el = document.getElementById('toast');
+  el.innerHTML = '';
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* Toast with an Undo action button */
+function showUndoToast(msg, onUndo) {
+  const el = document.getElementById('toast');
+  el.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.textContent = '↩ Undo';
+  btn.style.cssText = 'margin-left:14px;background:#6c63ff;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:.82rem;font-weight:600;cursor:pointer;';
+  btn.addEventListener('click', () => {
+    clearTimeout(toastTimer);
+    el.classList.remove('show');
+    onUndo();
+  });
+  el.appendChild(span);
+  el.appendChild(btn);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 6000);
 }
 
 /* ════════════════════════════════════════
@@ -918,20 +1012,21 @@ function filteredAndSortedTasks() {
   });
 
   // Sort (skip for Today view and manual)
-  if (sort !== 'manual') {
-    tasks = [...tasks].sort((a, b) => {
-      if (sort === 'due') {
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
-      }
-      if (sort === 'priority') return (PRIORITY_ORDER[a.priority]||1) - (PRIORITY_ORDER[b.priority]||1);
-      if (sort === 'created') return (b.createdAt||'').localeCompare(a.createdAt||'');
-      if (sort === 'alpha') return a.text.localeCompare(b.text);
-      return 0;
-    });
-  }
+  // Always float pinned tasks to the top, regardless of sort mode
+  tasks = [...tasks].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    if (sort === 'manual') return 0;
+    if (sort === 'due') {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    if (sort === 'priority') return (PRIORITY_ORDER[a.priority]||1) - (PRIORITY_ORDER[b.priority]||1);
+    if (sort === 'created') return (b.createdAt||'').localeCompare(a.createdAt||'');
+    if (sort === 'alpha') return a.text.localeCompare(b.text);
+    return 0;
+  });
 
   return tasks;
 }
@@ -955,6 +1050,7 @@ function renderTasks() {
 
     // Badges
     let badges = `<span class="badge badge-${t.priority}">${t.priority}</span>`;
+    if (t.pinned) badges += `<span class="badge badge-pin">📌 Pinned</span>`;
     if (t.category) badges += `<span class="badge badge-cat">${esc(t.category)}</span>`;
     if (t.dueDate) {
       const label = (dc==='overdue'?'⚠ Overdue · ':dc==='today'?'📅 Today · ':'📅 ') + formatDate(t.dueDate);
@@ -987,7 +1083,7 @@ function renderTasks() {
     }
 
     const li = document.createElement('li');
-    li.className = `task-item priority-${t.priority}${t.done?' done':''}`;
+    li.className = `task-item priority-${t.priority}${t.done?' done':''}${t.pinned?' pinned':''}`;
     li.dataset.index = i;
     li.setAttribute('draggable', (!isToday && isSortedManually).toString());
     li.innerHTML = `
@@ -1002,6 +1098,7 @@ function renderTasks() {
           ${progressHtml}
         </div>
         <div class="task-actions">
+          <button class="task-act-btn pin-btn${t.pinned?' pinned':''}" title="${t.pinned?'Unpin task':'Pin to top'}" aria-label="Pin task">📌</button>
           <button class="task-act-btn sub-btn" title="Toggle subtasks" aria-label="Toggle subtasks">☰</button>
           ${!isToday ? `<button class="task-act-btn edit-btn" title="Edit task" aria-label="Edit task">✏</button>` : ''}
           <button class="task-act-btn del-btn" title="Delete task" aria-label="Delete task">🗑</button>
@@ -1020,18 +1117,33 @@ function renderTasks() {
       handleTaskComplete(realListId, i);
     });
 
+    // Pin / unpin
+    li.querySelector('.pin-btn').addEventListener('click', () => {
+      const tasks = getListTasks(realListId);
+      tasks[i].pinned = !tasks[i].pinned;
+      setListTasks(realListId, tasks);
+      save(); renderTasks();
+      showToast(tasks[i].pinned ? '📌 Task pinned to top' : 'Task unpinned');
+    });
+
     // Edit
     if (!isToday) {
-      li.querySelector('.edit-btn').addEventListener('click', () => startEdit(li, i, realListId));
+      li.querySelector('.edit-btn').addEventListener('click', () => openEditModal(i, realListId));
     }
 
-    // Delete
+    // Delete (with undo)
     li.querySelector('.del-btn').addEventListener('click', () => {
       const tasks = getListTasks(realListId);
-      tasks.splice(i, 1);
+      const [removed] = tasks.splice(i, 1);
       setListTasks(realListId, tasks);
       save(); renderSidebar(); renderMain();
-      showToast('🗑 Task deleted');
+      showUndoToast('🗑 Task deleted', () => {
+        const t = getListTasks(realListId);
+        t.splice(Math.min(i, t.length), 0, removed);
+        setListTasks(realListId, t);
+        save(); renderSidebar(); renderMain();
+        showToast('↩ Task restored');
+      });
     });
 
     // Subtasks toggle
@@ -1116,28 +1228,70 @@ function addSubtask(listId, taskIndex, input) {
   save(); renderTasks();
 }
 
-/* ── Inline edit ── */
-function startEdit(li, i, listId) {
-  const tasks = getListTasks(listId);
-  const task = tasks[i];
-  const textSpan = li.querySelector('.task-text');
-  const editInput = document.createElement('input');
-  editInput.type = 'text';
-  editInput.className = 'task-edit-input';
-  editInput.value = task.text;
-  textSpan.replaceWith(editInput);
-  editInput.focus(); editInput.select();
-  function commit() {
-    const val = editInput.value.trim();
-    if (val) { tasks[i].text = val; setListTasks(listId, tasks); }
-    save(); renderTasks();
-  }
-  editInput.addEventListener('blur', commit);
-  editInput.addEventListener('keydown', e => {
-    if (e.key==='Enter') { e.preventDefault(); editInput.blur(); }
-    if (e.key==='Escape') { editInput.value = task.text; editInput.blur(); }
+/* ════════════════════════════════════════
+   EDIT TASK MODAL
+════════════════════════════════════════ */
+let editContext = { listId: null, index: null };
+const editModal = document.getElementById('edit-modal');
+
+function openEditModal(index, listId) {
+  const task = getListTasks(listId)[index];
+  if (!task) return;
+  editContext = { listId, index };
+
+  document.getElementById('edit-text').value     = task.text || '';
+  document.getElementById('edit-priority').value = task.priority || 'medium';
+  document.getElementById('edit-category').value = task.category || '';
+  document.getElementById('edit-due').value      = task.dueDate || '';
+  document.getElementById('edit-reminder').value = task.reminder || '';
+  document.getElementById('edit-recur').value    = task.recur || '';
+
+  // Populate category suggestions from this list
+  const dl = document.getElementById('edit-category-list');
+  dl.innerHTML = '';
+  getCategories(listId).forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; dl.appendChild(o);
   });
+
+  editModal.style.display = 'flex';
+  document.getElementById('edit-text').focus();
 }
+
+function saveEditModal() {
+  const { listId, index } = editContext;
+  if (listId == null || index == null) return;
+  const tasks = getListTasks(listId);
+  const task = tasks[index];
+  if (!task) { editModal.style.display = 'none'; return; }
+
+  const newText = document.getElementById('edit-text').value.trim();
+  if (!newText) { document.getElementById('edit-text').focus(); return; }
+
+  const newReminder = document.getElementById('edit-reminder').value || null;
+  // If the reminder time changed, reset the "reminded" flag so it fires again
+  if (newReminder !== task.reminder) task.reminded = false;
+
+  task.text     = newText;
+  task.priority = document.getElementById('edit-priority').value;
+  task.category = document.getElementById('edit-category').value.trim();
+  task.dueDate  = document.getElementById('edit-due').value || null;
+  task.reminder = newReminder;
+  task.recur    = document.getElementById('edit-recur').value || null;
+
+  setListTasks(listId, tasks);
+  save(); renderSidebar(); renderMain();
+  editModal.style.display = 'none';
+  showToast('✏ Task updated');
+}
+
+document.getElementById('edit-modal-confirm').addEventListener('click', saveEditModal);
+document.getElementById('edit-modal-cancel').addEventListener('click', () => { editModal.style.display = 'none'; });
+editModal.addEventListener('click', e => { if (e.target === editModal) editModal.style.display = 'none'; });
+document.getElementById('edit-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); saveEditModal(); }
+  if (e.key === 'Escape') editModal.style.display = 'none';
+});
 
 /* ════════════════════════════════════════
    ADD TASK FORM
@@ -1156,6 +1310,7 @@ document.getElementById('todo-form').addEventListener('submit', e => {
     reminder:  document.getElementById('reminder-input').value || null,
     recur:     document.getElementById('recur-select').value || null,
     reminded:  false,
+    pinned:    false,
     subtasks:  [],
     createdAt: new Date().toISOString(),
     completedAt: null
@@ -1180,26 +1335,30 @@ document.getElementById('todo-form').addEventListener('submit', e => {
 ════════════════════════════════════════ */
 document.getElementById('clear-done-btn').addEventListener('click', () => {
   const isToday = activeListId === TODAY_LIST_ID;
+
+  // Count how many will be removed first
+  let doneCount = 0;
   if (isToday) {
-    // Clear done from all lists
-    let count = 0;
-    state.lists.forEach(lst => {
-      const before = (state.tasks[lst.id]||[]).length;
-      state.tasks[lst.id] = (state.tasks[lst.id]||[]).filter(t => !t.done);
-      count += before - state.tasks[lst.id].length;
-    });
-    save(); renderSidebar(); renderMain();
-    showToast(`🧹 Removed ${count} completed task${count!==1?'s':''}`);
+    state.lists.forEach(lst => { doneCount += (state.tasks[lst.id]||[]).filter(t => t.done).length; });
   } else {
-    const tasks = getListTasks(activeListId);
-    const removed = tasks.filter(t => t.done).length;
-    if (removed === 0) { showToast('No completed tasks to clear'); return; }
-
-
-    setListTasks(activeListId, tasks.filter(t => !t.done));
-    save(); renderSidebar(); renderMain();
-    showToast(`🧹 Removed ${removed} completed task${removed!==1?'s':''}`);
+    doneCount = getListTasks(activeListId).filter(t => t.done).length;
   }
+
+  if (doneCount === 0) { showToast('No completed tasks to clear'); return; }
+
+  // Confirm before deleting
+  const scope = isToday ? 'all lists' : 'this list';
+  if (!confirm(`Remove ${doneCount} completed task${doneCount!==1?'s':''} from ${scope}? This cannot be undone.`)) return;
+
+  if (isToday) {
+    state.lists.forEach(lst => {
+      state.tasks[lst.id] = (state.tasks[lst.id]||[]).filter(t => !t.done);
+    });
+  } else {
+    setListTasks(activeListId, getListTasks(activeListId).filter(t => !t.done));
+  }
+  save(); renderSidebar(); renderMain();
+  showToast(`🧹 Removed ${doneCount} completed task${doneCount!==1?'s':''}`);
 });
 
 /* ════════════════════════════════════════
@@ -1277,12 +1436,12 @@ document.getElementById('export-json-btn').addEventListener('click', () => {
 });
 
 document.getElementById('export-csv-btn').addEventListener('click', () => {
-  const rows = [['List','Task','Priority','Category','Due Date','Repeat','Reminder','Done','Subtasks']];
+  const rows = [['List','Task','Priority','Category','Due Date','Repeat','Reminder','Pinned','Done','Subtasks']];
   state.lists.forEach(lst => {
     (state.tasks[lst.id]||[]).forEach(t => {
       const subs = (t.subtasks||[]).map(s=>(s.done?'[x] ':'[ ] ')+s.text).join(' | ');
       rows.push([lst.name, t.text, t.priority, t.category||'',
-                 t.dueDate||'', t.recur||'', t.reminder||'', t.done?'Yes':'No', subs]);
+                 t.dueDate||'', t.recur||'', t.reminder||'', t.pinned?'Yes':'No', t.done?'Yes':'No', subs]);
     });
   });
   const csv = rows.map(r => r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
